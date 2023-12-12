@@ -7,4 +7,5 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from .ops import OptiXContext, optix_build_bvh, optix_env_shade, bilateral_denoiser
-__all__ = ["OptiXContext", "optix_build_bvh", "optix_env_shade", 'bilateral_denoiser']
+
+__all__ = ["OptiXContext", "optix_build_bvh", "optix_env_shade", "bilateral_denoiser"]

@@ -18,6 +18,7 @@ from . import renderutils as ru
 # Monte-carlo sampled environment light with PDF / CDF computation
 ######################################################################################
 
+
 class EnvironmentLight:
     LIGHT_MIN_RES = 16
 
@@ -47,7 +48,9 @@ class EnvironmentLight:
         with torch.no_grad():
             # Compute PDF
             Y = util.pixel_grid(self.base.shape[1], self.base.shape[0])[..., 1]
-            self._pdf = torch.max(self.base, dim=-1)[0] * torch.sin(Y * np.pi) # Scale by sin(theta) for lat-long, https://cs184.eecs.berkeley.edu/sp18/article/25
+            self._pdf = torch.max(self.base, dim=-1)[0] * torch.sin(
+                Y * np.pi
+            )  # Scale by sin(theta) for lat-long, https://cs184.eecs.berkeley.edu/sp18/article/25
             self._pdf = self._pdf / torch.sum(self._pdf)
 
             # Compute cumulative sums over the columns and rows
@@ -61,22 +64,25 @@ class EnvironmentLight:
     @torch.no_grad()
     def generate_image(self, res):
         texcoord = util.pixel_grid(res[1], res[0])
-        return dr.texture(self.base[None, ...].contiguous(), texcoord[None, ...].contiguous(), filter_mode='linear')[0]
+        return dr.texture(self.base[None, ...].contiguous(), texcoord[None, ...].contiguous(), filter_mode="linear")[0]
+
 
 ######################################################################################
 # Load and store
 ######################################################################################
 
+
 @torch.no_grad()
 def _load_env_hdr(fn, scale=1.0, res=None):
-    latlong_img = torch.tensor(util.load_image(fn), dtype=torch.float32, device='cuda')*scale
+    latlong_img = torch.tensor(util.load_image(fn), dtype=torch.float32, device="cuda") * scale
 
     if res is not None:
         texcoord = util.pixel_grid(res[1], res[0])
-        latlong_img = torch.clamp(dr.texture(latlong_img[None, ...], texcoord[None, ...], filter_mode='linear')[0], min=0.0001)
+        latlong_img = torch.clamp(dr.texture(latlong_img[None, ...], texcoord[None, ...], filter_mode="linear")[0], min=0.0001)
 
     print("EnvProbe,", latlong_img.shape, ", min/max", torch.min(latlong_img).item(), torch.max(latlong_img).item())
     return EnvironmentLight(base=latlong_img)
+
 
 @torch.no_grad()
 def load_env(fn, scale=1.0, res=None):
@@ -85,18 +91,20 @@ def load_env(fn, scale=1.0, res=None):
     else:
         assert False, "Unknown envlight extension %s" % os.path.splitext(fn)[1]
 
+
 @torch.no_grad()
 def save_env_map(fn, light):
     assert isinstance(light, EnvironmentLight)
     color = light.generate_image([512, 1024])
     util.save_image_raw(fn, color.detach().cpu().numpy())
 
+
 ######################################################################################
 # Create trainable with random initialization
 ######################################################################################
 
-def create_trainable_env_rnd(base_res, scale=0.5, bias=0.25):  
-    base = torch.rand(base_res, base_res, 3, dtype=torch.float32, device='cuda') * scale + bias
+
+def create_trainable_env_rnd(base_res, scale=0.5, bias=0.25):
+    base = torch.rand(base_res, base_res, 3, dtype=torch.float32, device="cuda") * scale + bias
     l = EnvironmentLight(base.clone().detach().requires_grad_(True))
     return l
-      

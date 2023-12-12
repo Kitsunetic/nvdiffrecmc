@@ -15,10 +15,12 @@ import torch.utils.cpp_extension
 from .bsdf import *
 from .loss import *
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # C++/Cuda plugin compiler/loader.
 
 _cached_plugin = None
+
+
 def _get_plugin():
     # Return cached plugin if already loaded.
     global _cached_plugin
@@ -26,12 +28,15 @@ def _get_plugin():
         return _cached_plugin
 
     # Make sure we can find the necessary compiler and libary binaries.
-    if os.name == 'nt':
+    if os.name == "nt":
+
         def find_cl_path():
             import glob
-            for edition in ['Enterprise', 'Professional', 'BuildTools', 'Community']:
-                vs_editions = glob.glob(r"C:\Program Files (x86)\Microsoft Visual Studio\*\%s\VC\Tools\MSVC\*\bin\Hostx64\x64" % edition) \
-                      + glob.glob(r"C:\Program Files\Microsoft Visual Studio\*\%s\VC\Tools\MSVC\*\bin\Hostx64\x64" % edition)
+
+            for edition in ["Enterprise", "Professional", "BuildTools", "Community"]:
+                vs_editions = glob.glob(
+                    r"C:\Program Files (x86)\Microsoft Visual Studio\*\%s\VC\Tools\MSVC\*\bin\Hostx64\x64" % edition
+                ) + glob.glob(r"C:\Program Files\Microsoft Visual Studio\*\%s\VC\Tools\MSVC\*\bin\Hostx64\x64" % edition)
                 paths = sorted(vs_editions, reverse=True)
                 if paths:
                     return paths[0]
@@ -41,33 +46,33 @@ def _get_plugin():
             cl_path = find_cl_path()
             if cl_path is None:
                 raise RuntimeError("Could not locate a supported Microsoft Visual C++ installation")
-            os.environ['PATH'] += ';' + cl_path
+            os.environ["PATH"] += ";" + cl_path
 
     # Compiler options.
-    opts = ['-DNVDR_TORCH']
+    opts = ["-DNVDR_TORCH"]
 
     # Linker options.
-    if os.name == 'posix':
-        ldflags = ['-lcuda', '-lnvrtc']
-    elif os.name == 'nt':
-        ldflags = ['cuda.lib', 'advapi32.lib', 'nvrtc.lib']
+    if os.name == "posix":
+        ldflags = ["-lcuda", "-lnvrtc"]
+    elif os.name == "nt":
+        ldflags = ["cuda.lib", "advapi32.lib", "nvrtc.lib"]
 
     # List of sources.
     source_files = [
-        'c_src/mesh.cu',
-        'c_src/loss.cu',
-        'c_src/bsdf.cu',
-        'c_src/normal.cu',
-        'c_src/common.cpp',
-        'c_src/torch_bindings.cpp'
+        "c_src/mesh.cu",
+        "c_src/loss.cu",
+        "c_src/bsdf.cu",
+        "c_src/normal.cu",
+        "c_src/common.cpp",
+        "c_src/torch_bindings.cpp",
     ]
 
     # Some containers set this to contain old architectures that won't compile. We only need the one installed in the machine.
-    os.environ['TORCH_CUDA_ARCH_LIST'] = ''
+    os.environ["TORCH_CUDA_ARCH_LIST"] = ""
 
     # Try to detect if a stray lock file is left in cache directory and show a warning. This sometimes happens on Windows if the build is interrupted at just the right moment.
     try:
-        lock_fn = os.path.join(torch.utils.cpp_extension._get_build_directory('renderutils_plugin', False), 'lock')
+        lock_fn = os.path.join(torch.utils.cpp_extension._get_build_directory("renderutils_plugin", False), "lock")
         if os.path.exists(lock_fn):
             print("Warning: Lock file exists in build directory: '%s'" % lock_fn)
     except:
@@ -75,16 +80,26 @@ def _get_plugin():
 
     # Compile and load.
     source_paths = [os.path.join(os.path.dirname(__file__), fn) for fn in source_files]
-    torch.utils.cpp_extension.load(name='renderutils_plugin', sources=source_paths, extra_cflags=opts,
-         extra_cuda_cflags=opts, extra_ldflags=ldflags, with_cuda=True, verbose=True)
+    torch.utils.cpp_extension.load(
+        name="renderutils_plugin",
+        sources=source_paths,
+        extra_cflags=opts,
+        extra_cuda_cflags=opts,
+        extra_ldflags=ldflags,
+        with_cuda=True,
+        verbose=True,
+    )
 
     # Import, cache, and return the compiled module.
     import renderutils_plugin
+
     _cached_plugin = renderutils_plugin
     return _cached_plugin
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Internal kernels, just used for testing functionality
+
 
 class _fresnel_shlick_func(torch.autograd.Function):
     @staticmethod
@@ -97,6 +112,7 @@ class _fresnel_shlick_func(torch.autograd.Function):
     def backward(ctx, dout):
         f0, f90, cosTheta = ctx.saved_variables
         return _get_plugin().fresnel_shlick_bwd(f0, f90, cosTheta, dout) + (None,)
+
 
 def _fresnel_shlick(f0, f90, cosTheta, use_python=False):
     if use_python:
@@ -121,6 +137,7 @@ class _ndf_ggx_func(torch.autograd.Function):
         alphaSqr, cosTheta = ctx.saved_variables
         return _get_plugin().ndf_ggx_bwd(alphaSqr, cosTheta, dout) + (None,)
 
+
 def _ndf_ggx(alphaSqr, cosTheta, use_python=False):
     if use_python:
         out = bsdf_ndf_ggx(alphaSqr, cosTheta)
@@ -130,6 +147,7 @@ def _ndf_ggx(alphaSqr, cosTheta, use_python=False):
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of _ndf_ggx contains inf or NaN"
     return out
+
 
 class _lambda_ggx_func(torch.autograd.Function):
     @staticmethod
@@ -143,6 +161,7 @@ class _lambda_ggx_func(torch.autograd.Function):
         alphaSqr, cosTheta = ctx.saved_variables
         return _get_plugin().lambda_ggx_bwd(alphaSqr, cosTheta, dout) + (None,)
 
+
 def _lambda_ggx(alphaSqr, cosTheta, use_python=False):
     if use_python:
         out = bsdf_lambda_ggx(alphaSqr, cosTheta)
@@ -152,6 +171,7 @@ def _lambda_ggx(alphaSqr, cosTheta, use_python=False):
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of _lambda_ggx contains inf or NaN"
     return out
+
 
 class _masking_smith_func(torch.autograd.Function):
     @staticmethod
@@ -165,6 +185,7 @@ class _masking_smith_func(torch.autograd.Function):
         alphaSqr, cosThetaI, cosThetaO = ctx.saved_variables
         return _get_plugin().masking_smith_bwd(alphaSqr, cosThetaI, cosThetaO, dout) + (None,)
 
+
 def _masking_smith(alphaSqr, cosThetaI, cosThetaO, use_python=False):
     if use_python:
         out = bsdf_masking_smith_ggx_correlated(alphaSqr, cosThetaI, cosThetaO)
@@ -175,24 +196,33 @@ def _masking_smith(alphaSqr, cosThetaI, cosThetaO, use_python=False):
         assert torch.all(torch.isfinite(out)), "Output of _masking_smith contains inf or NaN"
     return out
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Shading normal setup (bump mapping + bent normals)
+
 
 class _prepare_shading_normal_func(torch.autograd.Function):
     @staticmethod
     def forward(ctx, pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl):
         ctx.two_sided_shading, ctx.opengl = two_sided_shading, opengl
-        out = _get_plugin().prepare_shading_normal_fwd(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl, False)
+        out = _get_plugin().prepare_shading_normal_fwd(
+            pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl, False
+        )
         ctx.save_for_backward(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm)
         return out
 
     @staticmethod
     def backward(ctx, dout):
         pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm = ctx.saved_variables
-        return _get_plugin().prepare_shading_normal_bwd(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, dout, ctx.two_sided_shading, ctx.opengl) + (None, None, None)
+        return _get_plugin().prepare_shading_normal_bwd(
+            pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, dout, ctx.two_sided_shading, ctx.opengl
+        ) + (None, None, None)
 
-def prepare_shading_normal(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading=True, opengl=True, use_python=False):
-    '''Takes care of all corner cases and produces a final normal used for shading:
+
+def prepare_shading_normal(
+    pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading=True, opengl=True, use_python=False
+):
+    """Takes care of all corner cases and produces a final normal used for shading:
         - Constructs tangent space
         - Flips normal direction based on geometric normal for two sided Shading
         - Perturbs shading normal by normal map
@@ -208,26 +238,32 @@ def prepare_shading_normal(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng,
         smooth_tng: Interpolated vertex tangents.
         geom_nrm: Geometric (face) normals.
         two_sided_shading: Use one/two sided shading
-        opengl: Use OpenGL/DirectX normal map conventions 
+        opengl: Use OpenGL/DirectX normal map conventions
         use_python: Use PyTorch implementation (for validation)
     Returns:
         Final shading normal
-    '''    
+    """
 
     if perturbed_nrm is None:
-        perturbed_nrm = torch.tensor([0, 0, 1], dtype=torch.float32, device='cuda', requires_grad=False)[None, None, None, ...]
-    
+        perturbed_nrm = torch.tensor([0, 0, 1], dtype=torch.float32, device="cuda", requires_grad=False)[None, None, None, ...]
+
     if use_python:
-        out = bsdf_prepare_shading_normal(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl)
+        out = bsdf_prepare_shading_normal(
+            pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl
+        )
     else:
-        out = _prepare_shading_normal_func.apply(pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl)
-    
+        out = _prepare_shading_normal_func.apply(
+            pos, view_pos, perturbed_nrm, smooth_nrm, smooth_tng, geom_nrm, two_sided_shading, opengl
+        )
+
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of prepare_shading_normal contains inf or NaN"
     return out
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # BSDF functions
+
 
 class _lambert_func(torch.autograd.Function):
     @staticmethod
@@ -241,8 +277,9 @@ class _lambert_func(torch.autograd.Function):
         nrm, wi = ctx.saved_variables
         return _get_plugin().lambert_bwd(nrm, wi, dout) + (None,)
 
+
 def lambert(nrm, wi, use_python=False):
-    '''Lambertian bsdf. 
+    """Lambertian bsdf.
     All tensors assume a shape of [minibatch_size, height, width, 3] or broadcastable equivalent.
 
     Args:
@@ -252,16 +289,17 @@ def lambert(nrm, wi, use_python=False):
 
     Returns:
         Shaded diffuse value with shape [minibatch_size, height, width, 1]
-    '''
+    """
 
     if use_python:
         out = bsdf_lambert(nrm, wi)
     else:
         out = _lambert_func.apply(nrm, wi)
- 
+
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of lambert contains inf or NaN"
     return out
+
 
 class _frostbite_diffuse_func(torch.autograd.Function):
     @staticmethod
@@ -275,8 +313,9 @@ class _frostbite_diffuse_func(torch.autograd.Function):
         nrm, wi, wo, linearRoughness = ctx.saved_variables
         return _get_plugin().frostbite_bwd(nrm, wi, wo, linearRoughness, dout) + (None,)
 
+
 def frostbite_diffuse(nrm, wi, wo, linearRoughness, use_python=False):
-    '''Frostbite, normalized Disney Diffuse bsdf. 
+    """Frostbite, normalized Disney Diffuse bsdf.
     All tensors assume a shape of [minibatch_size, height, width, 3] or broadcastable equivalent.
 
     Args:
@@ -288,16 +327,17 @@ def frostbite_diffuse(nrm, wi, wo, linearRoughness, use_python=False):
 
     Returns:
         Shaded diffuse value with shape [minibatch_size, height, width, 1]
-    '''
+    """
 
     if use_python:
         out = bsdf_frostbite(nrm, wi, wo, linearRoughness)
     else:
         out = _frostbite_diffuse_func.apply(nrm, wi, wo, linearRoughness)
- 
+
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of lambert contains inf or NaN"
     return out
+
 
 class _pbr_specular_func(torch.autograd.Function):
     @staticmethod
@@ -312,8 +352,9 @@ class _pbr_specular_func(torch.autograd.Function):
         col, nrm, wo, wi, alpha = ctx.saved_variables
         return _get_plugin().pbr_specular_bwd(col, nrm, wo, wi, alpha, ctx.min_roughness, dout) + (None, None)
 
+
 def pbr_specular(col, nrm, wo, wi, alpha, min_roughness=0.08, use_python=False):
-    '''Physically-based specular bsdf.
+    """Physically-based specular bsdf.
     All tensors assume a shape of [minibatch_size, height, width, 3] or broadcastable equivalent unless otherwise noted.
 
     Args:
@@ -327,16 +368,17 @@ def pbr_specular(col, nrm, wo, wi, alpha, min_roughness=0.08, use_python=False):
         use_python: Use PyTorch implementation (for validation)
     Returns:
         Shaded specular color
-    '''
+    """
 
     if use_python:
         out = bsdf_pbr_specular(col, nrm, wo, wi, alpha, min_roughness=min_roughness)
     else:
         out = _pbr_specular_func.apply(col, nrm, wo, wi, alpha, min_roughness)
-    
+
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of pbr_specular contains inf or NaN"
     return out
+
 
 class _pbr_bsdf_func(torch.autograd.Function):
     @staticmethod
@@ -350,10 +392,15 @@ class _pbr_bsdf_func(torch.autograd.Function):
     @staticmethod
     def backward(ctx, dout):
         kd, arm, pos, nrm, view_pos, light_pos = ctx.saved_variables
-        return _get_plugin().pbr_bsdf_bwd(kd, arm, pos, nrm, view_pos, light_pos, ctx.min_roughness, ctx.BSDF, dout) + (None, None, None)
+        return _get_plugin().pbr_bsdf_bwd(kd, arm, pos, nrm, view_pos, light_pos, ctx.min_roughness, ctx.BSDF, dout) + (
+            None,
+            None,
+            None,
+        )
+
 
 def pbr_bsdf(kd, arm, pos, nrm, view_pos, light_pos, min_roughness=0.08, bsdf="lambert", use_python=False):
-    '''Physically-based bsdf, both diffuse & specular lobes
+    """Physically-based bsdf, both diffuse & specular lobes
     All tensors assume a shape of [minibatch_size, height, width, 3] or broadcastable equivalent unless otherwise noted.
 
     Args:
@@ -370,23 +417,25 @@ def pbr_bsdf(kd, arm, pos, nrm, view_pos, light_pos, min_roughness=0.08, bsdf="l
 
     Returns:
         Shaded color.
-    '''    
+    """
 
-    BSDF = 0 
-    if bsdf == 'frostbite':
+    BSDF = 0
+    if bsdf == "frostbite":
         BSDF = 1
 
     if use_python:
         out = bsdf_pbr(kd, arm, pos, nrm, view_pos, light_pos, min_roughness, BSDF)
     else:
         out = _pbr_bsdf_func.apply(kd, arm, pos, nrm, view_pos, light_pos, min_roughness, BSDF)
-    
+
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of pbr_bsdf contains inf or NaN"
     return out
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # cubemap filter with filtering across edges
+
 
 class _diffuse_cubemap_func(torch.autograd.Function):
     @staticmethod
@@ -397,9 +446,10 @@ class _diffuse_cubemap_func(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout):
-        cubemap, = ctx.saved_variables
+        (cubemap,) = ctx.saved_variables
         cubemap_grad = _get_plugin().diffuse_cubemap_bwd(cubemap, dout)
         return cubemap_grad, None
+
 
 def diffuse_cubemap(cubemap, use_python=False):
     if use_python:
@@ -409,6 +459,7 @@ def diffuse_cubemap(cubemap, use_python=False):
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of diffuse_cubemap contains inf or NaN"
     return out
+
 
 class _specular_cubemap(torch.autograd.Function):
     @staticmethod
@@ -424,6 +475,7 @@ class _specular_cubemap(torch.autograd.Function):
         cubemap_grad = _get_plugin().specular_cubemap_bwd(cubemap, bounds, dout, ctx.roughness, ctx.theta_cutoff)
         return cubemap_grad, None, None, None
 
+
 # Compute the bounds of the GGX NDF lobe to retain "cutoff" percent of the energy
 def __ndfBounds(res, roughness, cutoff):
     def ndfGGX(alphaSqr, costheta):
@@ -433,7 +485,7 @@ def __ndfBounds(res, roughness, cutoff):
 
     # Sample out cutoff angle
     nSamples = 1000000
-    costheta = np.cos(np.linspace(0, np.pi/2.0, nSamples))
+    costheta = np.cos(np.linspace(0, np.pi / 2.0, nSamples))
     D = np.cumsum(ndfGGX(roughness**4, costheta))
     idx = np.argmax(D >= D[..., -1] * cutoff)
 
@@ -441,10 +493,15 @@ def __ndfBounds(res, roughness, cutoff):
     bounds = _get_plugin().specular_bounds(res, costheta[idx])
 
     return costheta[idx], bounds
+
+
 __ndfBoundsDict = {}
 
+
 def specular_cubemap(cubemap, roughness, cutoff=0.99, use_python=False):
-    assert cubemap.shape[0] == 6 and cubemap.shape[1] == cubemap.shape[2], "Bad shape for cubemap tensor: %s" % str(cubemap.shape)
+    assert cubemap.shape[0] == 6 and cubemap.shape[1] == cubemap.shape[2], "Bad shape for cubemap tensor: %s" % str(
+        cubemap.shape
+    )
 
     if use_python:
         assert False
@@ -457,8 +514,10 @@ def specular_cubemap(cubemap, roughness, cutoff=0.99, use_python=False):
         assert torch.all(torch.isfinite(out)), "Output of specular_cubemap contains inf or NaN"
     return out[..., 0:3] / out[..., 3:]
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Fast image loss function
+
 
 class _image_loss_func(torch.autograd.Function):
     @staticmethod
@@ -473,32 +532,35 @@ class _image_loss_func(torch.autograd.Function):
         img, target = ctx.saved_variables
         return _get_plugin().image_loss_bwd(img, target, dout, ctx.loss, ctx.tonemapper) + (None, None, None)
 
-def image_loss(img, target, loss='l1', tonemapper='none', use_python=False):
-    '''Compute HDR image loss. Combines tonemapping and loss into a single kernel for better perf.
+
+def image_loss(img, target, loss="l1", tonemapper="none", use_python=False):
+    """Compute HDR image loss. Combines tonemapping and loss into a single kernel for better perf.
     All tensors assume a shape of [minibatch_size, height, width, 3] or broadcastable equivalent unless otherwise noted.
 
     Args:
         img: Input image.
-        target: Target (reference) image. 
+        target: Target (reference) image.
         loss: Type of loss. Valid options are ['l1', 'mse', 'smape', 'relmse']
         tonemapper: Tonemapping operations. Valid options are ['none', 'log_srgb']
         use_python: Use PyTorch implementation (for validation)
 
     Returns:
         Image space loss (scalar value).
-    '''
+    """
     if use_python:
         out = image_loss_fn(img, target, loss, tonemapper)
     else:
         out = _image_loss_func.apply(img, target, loss, tonemapper)
-        out = torch.sum(out) / (img.shape[0]*img.shape[1]*img.shape[2])
+        out = torch.sum(out) / (img.shape[0] * img.shape[1] * img.shape[2])
 
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of image_loss contains inf or NaN"
     return out
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Transform points function
+
 
 class _xfm_func(torch.autograd.Function):
     @staticmethod
@@ -512,17 +574,20 @@ class _xfm_func(torch.autograd.Function):
         points, matrix = ctx.saved_variables
         return (_get_plugin().xfm_bwd(points, matrix, dout, ctx.isPoints),) + (None, None, None)
 
+
 def xfm_points(points, matrix, use_python=False):
-    '''Transform points.
+    """Transform points.
     Args:
         points: Tensor containing 3D points with shape [minibatch_size, num_vertices, 3] or [1, num_vertices, 3]
         matrix: A 4x4 transform matrix with shape [minibatch_size, 4, 4]
         use_python: Use PyTorch's torch.matmul (for validation)
     Returns:
         Transformed points in homogeneous 4D with shape [minibatch_size, num_vertices, 4].
-    '''    
+    """
     if use_python:
-        out = torch.matmul(torch.nn.functional.pad(points, pad=(0,1), mode='constant', value=1.0), torch.transpose(matrix, 1, 2))
+        out = torch.matmul(
+            torch.nn.functional.pad(points, pad=(0, 1), mode="constant", value=1.0), torch.transpose(matrix, 1, 2)
+        )
     else:
         out = _xfm_func.apply(points, matrix, True)
 
@@ -530,8 +595,9 @@ def xfm_points(points, matrix, use_python=False):
         assert torch.all(torch.isfinite(out)), "Output of xfm_points contains inf or NaN"
     return out
 
+
 def xfm_vectors(vectors, matrix, use_python=False):
-    '''Transform vectors.
+    """Transform vectors.
     Args:
         vectors: Tensor containing 3D vectors with shape [minibatch_size, num_vertices, 3] or [1, num_vertices, 3]
         matrix: A 4x4 transform matrix with shape [minibatch_size, 4, 4]
@@ -539,16 +605,15 @@ def xfm_vectors(vectors, matrix, use_python=False):
 
     Returns:
         Transformed vectors in homogeneous 4D with shape [minibatch_size, num_vertices, 4].
-    '''    
+    """
 
     if use_python:
-        out = torch.matmul(torch.nn.functional.pad(vectors, pad=(0,1), mode='constant', value=0.0), torch.transpose(matrix, 1, 2))[..., 0:3].contiguous()
+        out = torch.matmul(
+            torch.nn.functional.pad(vectors, pad=(0, 1), mode="constant", value=0.0), torch.transpose(matrix, 1, 2)
+        )[..., 0:3].contiguous()
     else:
         out = _xfm_func.apply(vectors, matrix, False)
 
     if torch.is_anomaly_enabled():
         assert torch.all(torch.isfinite(out)), "Output of xfm_vectors contains inf or NaN"
     return out
-
-
-

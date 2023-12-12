@@ -17,30 +17,35 @@ from . import util
 # Smooth pooling / mip computation with linear gradient upscaling
 ######################################################################################
 
+
 class texture2d_mip(torch.autograd.Function):
     @staticmethod
     def forward(ctx, texture):
-        return util.avg_pool_nhwc(texture, (2,2))
+        return util.avg_pool_nhwc(texture, (2, 2))
 
     @staticmethod
     def backward(ctx, dout):
-        gy, gx = torch.meshgrid(torch.linspace(0.0 + 0.25 / dout.shape[1], 1.0 - 0.25 / dout.shape[1], dout.shape[1]*2, device="cuda"), 
-                                torch.linspace(0.0 + 0.25 / dout.shape[2], 1.0 - 0.25 / dout.shape[2], dout.shape[2]*2, device="cuda"))
+        gy, gx = torch.meshgrid(
+            torch.linspace(0.0 + 0.25 / dout.shape[1], 1.0 - 0.25 / dout.shape[1], dout.shape[1] * 2, device="cuda"),
+            torch.linspace(0.0 + 0.25 / dout.shape[2], 1.0 - 0.25 / dout.shape[2], dout.shape[2] * 2, device="cuda"),
+        )
         uv = torch.stack((gx, gy), dim=-1)
-        return dr.texture(dout * 0.25, uv[None, ...].contiguous(), filter_mode='linear', boundary_mode='clamp')
+        return dr.texture(dout * 0.25, uv[None, ...].contiguous(), filter_mode="linear", boundary_mode="clamp")
+
 
 ########################################################################################################
-# Simple texture class. A texture can be either 
+# Simple texture class. A texture can be either
 # - A 3D tensor (using auto mipmaps)
 # - A list of 3D tensors (full custom mip hierarchy)
 ########################################################################################################
 
+
 class Texture2D:
-     # Initializes a texture from image data.
-     # Input can be constant value (1D array) or texture (3D array) or mip hierarchy (list of 3d arrays)
+    # Initializes a texture from image data.
+    # Input can be constant value (1D array) or texture (3D array) or mip hierarchy (list of 3d arrays)
     def __init__(self, init, min_max=None):
         if isinstance(init, np.ndarray):
-            init = torch.tensor(init, dtype=torch.float32, device='cuda')
+            init = torch.tensor(init, dtype=torch.float32, device="cuda")
         elif isinstance(init, list) and len(init) == 1:
             init = init[0]
 
@@ -49,12 +54,12 @@ class Texture2D:
         elif len(init.shape) == 3:
             self.data = init[None, ...]
         else:
-            self.data = init[None, None, None, :] # Convert constant to 1x1 tensor
+            self.data = init[None, None, None, :]  # Convert constant to 1x1 tensor
 
         self.min_max = min_max
 
     # Filtered (trilinear) sample texture at a given location
-    def sample(self, texc, texc_deriv, filter_mode='linear-mipmap-linear'):
+    def sample(self, texc, texc_deriv, filter_mode="linear-mipmap-linear"):
         if isinstance(self.data, list):
             out = dr.texture(self.data[0], texc, texc_deriv, mip=self.data[1:], filter_mode=filter_mode)
         else:
@@ -95,10 +100,12 @@ class Texture2D:
             for mip in self.getMips():
                 mip.copy_(util.safe_normalize(mip))
 
+
 ########################################################################################################
-# Helper function to create a trainable texture from a regular texture. The trainable weights are 
+# Helper function to create a trainable texture from a regular texture. The trainable weights are
 # initialized with texture data as an initial guess
 ########################################################################################################
+
 
 def create_trainable(init, res=None, auto_mipmaps=True, min_max=None):
     with torch.no_grad():
@@ -107,10 +114,10 @@ def create_trainable(init, res=None, auto_mipmaps=True, min_max=None):
             min_max = init.min_max if min_max is None else min_max
             init = init.data
         elif isinstance(init, np.ndarray):
-            init = torch.tensor(init, dtype=torch.float32, device='cuda')
+            init = torch.tensor(init, dtype=torch.float32, device="cuda")
 
         # Pad to NHWC if needed
-        if len(init.shape) == 1: # Extend constant to NHWC tensor
+        if len(init.shape) == 1:  # Extend constant to NHWC tensor
             init = init[None, None, None, :]
         elif len(init.shape) == 3:
             init = init[None, ...]
@@ -130,27 +137,33 @@ def create_trainable(init, res=None, auto_mipmaps=True, min_max=None):
         else:
             return Texture2D(init.clone().detach().requires_grad_(True), min_max=min_max)
 
+
 ########################################################################################################
 # Convert texture to and from SRGB
 ########################################################################################################
 
+
 def srgb_to_rgb(texture):
     return Texture2D(list(util.srgb_to_rgb(mip) for mip in texture.getMips()))
 
+
 def rgb_to_srgb(texture):
     return Texture2D(list(util.rgb_to_srgb(mip) for mip in texture.getMips()))
+
 
 ########################################################################################################
 # Utility functions for loading / storing a texture
 ########################################################################################################
 
+
 def _load_mip2D(fn, lambda_fn=None, channels=None):
-    imgdata = torch.tensor(util.load_image(fn), dtype=torch.float32, device='cuda')
+    imgdata = torch.tensor(util.load_image(fn), dtype=torch.float32, device="cuda")
     if channels is not None:
         imgdata = imgdata[..., 0:channels]
     if lambda_fn is not None:
         imgdata = lambda_fn(imgdata)
     return imgdata.detach().clone()
+
 
 def load_texture2D(fn, lambda_fn=None, channels=None):
     base, ext = os.path.splitext(fn)
@@ -161,6 +174,7 @@ def load_texture2D(fn, lambda_fn=None, channels=None):
         return Texture2D(mips)
     else:
         return Texture2D(_load_mip2D(fn, lambda_fn, channels))
+
 
 def _save_mip2D(fn, mip, mipidx, lambda_fn):
     if lambda_fn is not None:
@@ -174,9 +188,10 @@ def _save_mip2D(fn, mip, mipidx, lambda_fn):
         base, ext = os.path.splitext(fn)
         util.save_image(base + ("_%d" % mipidx) + ext, data)
 
+
 def save_texture2D(fn, tex, lambda_fn=None):
     if isinstance(tex.data, list):
         for i, mip in enumerate(tex.data):
-            _save_mip2D(fn, mip[0,...], i, lambda_fn)
+            _save_mip2D(fn, mip[0, ...], i, lambda_fn)
     else:
-        _save_mip2D(fn, tex.data[0,...], None, lambda_fn)
+        _save_mip2D(fn, tex.data[0, ...], None, lambda_fn)
